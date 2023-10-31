@@ -28,7 +28,7 @@ func (s *Service) Start() {
 	s.events = make(chan Event, 64)
 	go s.Handle()
 	go CatchSignals(s.events)
-	go s.Main()
+	s.Main()
 }
 
 func (s *Service) Main() {

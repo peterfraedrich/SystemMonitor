@@ -1,12 +1,15 @@
 package main
 
 import (
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func OpenDB(path string, drop bool) (*gorm.DB, error) {
-	d, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
+	d, err := gorm.Open(sqlite.Open(path), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
 	if err != nil {
 		return nil, err
 	}

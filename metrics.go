@@ -10,39 +10,29 @@ import (
 )
 
 type SystemInformation struct {
-	Host struct {
-		Hostname             string `json:"hostname"`
-		Uptime               uint64 `json:"uptime"`
-		BootTime             uint64 `json:"bootTime"`
-		Procs                uint64 `json:"procs"`           // number of processes
-		OS                   string `json:"os"`              // ex: freebsd, linux
-		Platform             string `json:"platform"`        // ex: ubuntu, linuxmint
-		PlatformFamily       string `json:"platformFamily"`  // ex: debian, rhel
-		PlatformVersion      string `json:"platformVersion"` // version of the complete OS
-		KernelVersion        string `json:"kernelVersion"`   // version of the OS kernel (if available)
-		KernelArch           string `json:"kernelArch"`      // native cpu architecture queried at runtime, as returned by `uname -m` or empty string in case of error
-		VirtualizationSystem string `json:"virtualizationSystem"`
-		VirtualizationRole   string `json:"virtualizationRole"` // guest or host
-		HostID               string `json:"hostId"`             // ex: uuid
-	} `gorm:"embedded;embeddedPrefix:host_"`
-	CPU struct {
-		CPU        int32    `json:"cpu"`
-		VendorID   string   `json:"vendorId"`
-		Family     string   `json:"family"`
-		Model      string   `json:"model"`
-		Stepping   int32    `json:"stepping"`
-		PhysicalID string   `json:"physicalId"`
-		CoreID     string   `json:"coreId"`
-		Cores      int32    `json:"cores"`
-		ModelName  string   `json:"modelName"`
-		Mhz        float64  `json:"mhz"`
-		CacheSize  int32    `json:"cacheSize"`
-		Flags      []string `json:"flags"`
-		Microcode  string   `json:"microcode"`
-	} `gorm:"embedded;embeddedPrefix:cpu_"`
+	Hostname        string
+	BootTime        uint64
+	OS              string
+	Platform        string
+	PlatformFamily  string
+	PlatformVersion string
+	KernelVersion   string
+	KernelArch      string
+	HostID          string
+	CPUVendorID     string
+	CPUFamily       string
+	CPUModel        string
+	CPUID           string
+	CPUCores        int32
+	CPUMHZ          float64
+	CPUCacheSize    int32
 }
 
 type SystemMetricsBasic struct {
+	System struct {
+		Uptime     uint64
+		CPUVoltage uint16
+	} `gorm:"embedded;embeddedPrefix:system_"`
 	CPU struct {
 		CPU       string  `json:"cpu"`
 		User      float64 `json:"user"`
@@ -116,11 +106,20 @@ func GetSystemInformation() (SystemInformation, []error) {
 			errs = append(errs, err)
 			return
 		}
-		err = copier.Copy(&sysinfo.Host, &stat)
+		sysinfo.Hostname = stat.Hostname
+		sysinfo.BootTime = stat.BootTime
+		sysinfo.OS = stat.OS
+		sysinfo.Platform = stat.Platform
+		sysinfo.PlatformFamily = stat.PlatformFamily
+		sysinfo.PlatformVersion = stat.PlatformVersion
+		sysinfo.KernelVersion = stat.KernelVersion
+		sysinfo.KernelArch = stat.KernelArch
+		sysinfo.HostID = stat.HostID
 		if err != nil {
 			errs = append(errs, err)
 		}
 	}()
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		stat, err := cpu.Info()
@@ -128,10 +127,14 @@ func GetSystemInformation() (SystemInformation, []error) {
 			errs = append(errs, err)
 			return
 		}
-		copier.Copy(&sysinfo.CPU, &stat[0])
-		if err != nil {
-			errs = append(errs, err)
-		}
+		cpu := stat[0]
+		sysinfo.CPUVendorID = cpu.VendorID
+		sysinfo.CPUFamily = cpu.Family
+		sysinfo.CPUModel = cpu.Model
+		sysinfo.CPUID = cpu.CoreID
+		sysinfo.CPUCores = cpu.Cores
+		sysinfo.CPUMHZ = cpu.Mhz
+		sysinfo.CPUCacheSize = cpu.CacheSize
 	}()
 	wg.Wait()
 	if len(errs) != 0 {
@@ -153,7 +156,9 @@ func GetSystemMetricsBasic() (SystemMetricsBasic, []error) {
 			errs = append(errs, err)
 			return
 		}
-		copier.Copy(&metrics.CPU, &stat[0])
+		if len(stat) > 0 {
+			copier.Copy(&metrics.CPU, &stat[0])
+		}
 	}()
 	// MEM
 	wg.Add(1)
@@ -167,15 +172,30 @@ func GetSystemMetricsBasic() (SystemMetricsBasic, []error) {
 		copier.Copy(&metrics.Memory, &stat)
 	}()
 	// TEMPS
+	//wg.Add(1)
+	//go func() {
+	//	defer wg.Done()
+	//	stat, err := host.SensorsTemperatures()
+	//	if err != nil {
+	//		errs = append(errs, err)
+	//		return
+	//	}
+	//	if len(stat) > 0 {
+	//		copier.Copy(&metrics.Temps, &stat[0])
+	//	}
+	//}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		stat, err := host.SensorsTemperatures()
+		stat, err := host.Info()
 		if err != nil {
 			errs = append(errs, err)
 			return
 		}
-		copier.Copy(&metrics.Temps, &stat[0])
+		metrics.System.Uptime = stat.Uptime
+		if err != nil {
+			errs = append(errs, err)
+		}
 	}()
 	wg.Wait()
 	return metrics, errs
